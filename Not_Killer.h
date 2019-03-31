@@ -46,15 +46,15 @@ class Not_Killer
 
     private:
         Point              _currPos;
+        Point              _enemy_currPos;
 
         std::vector<Point> _path;
+        std::vector<Point> _enemy_path;
 
         int32_t            _playerIdx;
+        int32_t            _enemy_playerIdx;
 
         int32_t            _boardWidth;
         int32_t            _boardHeight;
 };
-
 #endif /* BOTS_NOT_KILLER_KILLER_H_ */
-
-

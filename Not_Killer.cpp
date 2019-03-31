@@ -109,6 +109,26 @@ void Not_Killer::onOpponentMove(const int32_t playerIdx,
                             const Point * playerPos,
                             const int32_t playerDir)
 {
+    _enemy_currPos = *playerPos;
+    Point enemy_newPos;
+    enemy_newPos = _enemy_currPos;
+
+    switch (playerDir)
+    {
+        case PlayerDir::LEFT: --enemy_newPos.x ;
+        break;
+        case PlayerDir::RIGHT: ++enemy_newPos.x;
+        break;
+        case PlayerDir::UP: --enemy_newPos.y;
+        break;
+        case PlayerDir::DOWN: ++enemy_newPos.y;
+        break;
+        default: ;
+        break;
+    }
+
+    _enemy_currPos = enemy_newPos;
+    _enemy_path.emplace_back(_enemy_currPos);
     //dummy check to satisfy Wunused-variable gcc warning
     if(playerIdx || playerPos || playerDir) { }
 }

@@ -98,7 +98,3 @@ void scoreUpdate(const int32_t playerIdx,
 }
 
 } //extern "C"
-
-
-
-
