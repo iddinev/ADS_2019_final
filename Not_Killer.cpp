@@ -5,12 +5,12 @@
 
 //C++ system headers
 #include <cstdlib>
+#include <cstdio>
 
 //Other libraries headers
 
 //Own components headers
 #include "utils/CommonDefines.h"
-#include "utils/Random.hpp"
 
 
 Not_Killer::Not_Killer() : _playerIdx(INT32_MAX),
@@ -30,8 +30,13 @@ int32_t Not_Killer::init(const int32_t playerIdx,
     _playerIdx   = playerIdx;
     _boardWidth  = boardWidth;
     _boardHeight = boardHeight;
+    // Point (-1,-1) is used as an invalid marker.
+    _enemy_currPos = Point(-1,-1);
+    _get_rect = false;
 
     _path.emplace_back(_currPos);
+
+    centerReset();
 
     //dummy check to satisfy Wunused-variable gcc warning
     if(totalPlayersCount) { }
@@ -44,13 +49,13 @@ void Not_Killer::deinit()
 
 }
 
+// Whoever plays - wins, whoever doesn't play - does not win.
 void Not_Killer::requestPlayerMove(const int64_t allowedTime,
                                int32_t *     outPlayerDir)
 {
     //dummy check to satisfy Wunused-variable gcc warning
     if(allowedTime) { }
 
-    Random & rng = Random::getInstance();
 
     Point prevPos(1000, 1000); //some invalid destination
 
@@ -61,48 +66,76 @@ void Not_Killer::requestPlayerMove(const int64_t allowedTime,
     }
 
     Point newPos;
-    bool isNewPosInvalid = true;
+    newPos = _currPos;
+    // bool isNewPosInvalid = true;
 
-    do
+    if ( _currPos == _centerPos )
     {
-        newPos = _currPos;
-
-        if(rng.generate(0, 1)) //is horizontal move
+        if ( _posSeqSize > 1)
         {
-            if(rng.generate(0, 1)) //should go left
+            if ( _currSeqDir == _posSeqSize -1 )
             {
-                --newPos.x;
-                *outPlayerDir = PlayerDir::LEFT;
+                _currSeqDir = 0;
             }
-            else //go right
+            else
             {
-                ++newPos.x;
-                *outPlayerDir = PlayerDir::RIGHT;
-            }
+                // Change quadrant if you scored or were reset somehow.
+                if(_get_rect)
+                {
+                    ++_currSeqDir;
+                    _get_rect = false;
+                }
+            } 
         }
-        else //vertical move
-        {
-            if(rng.generate(0, 1)) //should go up
-            {
-                --newPos.y;
-                *outPlayerDir = PlayerDir::UP;
-            }
-            else //go down
-            {
-                ++newPos.y;
-                *outPlayerDir = PlayerDir::DOWN;
-            }
-        }
+    }
+    printf("Quadrant %d invoked\n", _posSeq[_currSeqDir]);
 
-        isNewPosInvalid = (newPos == prevPos)          ||
-                          (0 > newPos.x)               ||
-                          (_boardWidth - 1 < newPos.x) ||
-                          (0 > newPos.y)               ||
-                          (_boardHeight - 1 < newPos.y);
-    }while(isNewPosInvalid);
+    // Walk, walk, walk...
+
+    switch (_posSeq[_currSeqDir])
+    {
+        case PlayerDir::LEFT: *outPlayerDir = new_dir(PlayerDir::LEFT);
+        break;
+        case PlayerDir::DOWN: *outPlayerDir = new_dir(PlayerDir::DOWN);
+        break;
+        case PlayerDir::RIGHT: *outPlayerDir = new_dir(PlayerDir::RIGHT);
+        break;
+        case PlayerDir::UP: *outPlayerDir = new_dir(PlayerDir::UP);
+        break;
+        default:
+        break;
+    }
+    switch (*outPlayerDir)
+    {
+        case PlayerDir::LEFT: printf("Direction LEFT\n");
+        break;
+        case PlayerDir::DOWN: printf("Direction DOWN\n");
+        break;
+        case PlayerDir::RIGHT:printf("Direction RIGHT\n");
+        break;
+        case PlayerDir::UP:   printf("Direction UP\n");
+        break;
+        default:
+        break;
+    }
+    
+    switch (*outPlayerDir)
+    {
+        case PlayerDir::LEFT: --newPos.x;
+        break;
+        case PlayerDir::RIGHT: ++newPos.x;
+        break;
+        case PlayerDir::UP: --newPos.y;
+        break;
+        case PlayerDir::DOWN: ++newPos.y;
+        break;
+        default:
+        break;
+    }
 
     _currPos = newPos;
     _path.emplace_back(_currPos);
+    printf("New position - x: %d y : %d\n", _currPos.x, _currPos.y);
 }
 
 void Not_Killer::onOpponentMove(const int32_t playerIdx,
@@ -123,7 +156,7 @@ void Not_Killer::onOpponentMove(const int32_t playerIdx,
         break;
         case PlayerDir::DOWN: ++enemy_newPos.y;
         break;
-        default: ;
+        default:
         break;
     }
 
@@ -137,8 +170,10 @@ void Not_Killer::forceErasePath()
 {
     printf("Player: %d - forceErasePath() invoked\n", _playerIdx);
 
+    _get_rect = true;
     _path.clear();
     _path.emplace_back(_currPos);
+    centerReset();
 }
 
 void Not_Killer::forceRollbackToPos(const Point * playerPos)
@@ -159,7 +194,9 @@ void Not_Killer::forceRollbackToPos(const Point * playerPos)
         }
     }
 
+    _get_rect = true;
     _currPos = *playerPos;
+    centerReset();
 }
 
 void Not_Killer::scoreUpdate(const int32_t playerIdx,
@@ -172,10 +209,172 @@ void Not_Killer::scoreUpdate(const int32_t playerIdx,
                                  playerIdx, scoreRects[i].x, scoreRects[i].y);
     }
 
+
+    _get_rect = true;
     _path.clear();
     _path.emplace_back(_currPos);
 }
 
+PlayerDir Not_Killer::new_dir(const PlayerDir qDir)
+{
+    PlayerDir outDir = PlayerDir::LEFT; 
 
+    if ( qDir == PlayerDir::RIGHT )
+    {
+        if ( _currPos.x < (_boardWidth - 1) && _currPos.y == _centerPos.y )
+        {
+            outDir = PlayerDir::RIGHT;
+            printf("Q RIGHT :: RIGHT\n");
+        }
+        else if ( _currPos.y > 0 && _currPos.x == (_boardWidth - 1) )
+        {
+            outDir = PlayerDir::UP;
+            printf("Q RIGHT :: UP\n");
+        }
+        else if ( _currPos.x > _centerPos.x && _currPos.y == 0 )
+        {
+            outDir = PlayerDir::LEFT;
+            printf("Q RIGHT :: LEFT\n");
+        }
+        else if ( _currPos.y < _centerPos.y  && _currPos.x == _centerPos.x )
+        {
+            outDir = PlayerDir::DOWN;
+            printf("Q RIGHT :: DOWN\n");
+        }
+    }
+    else if ( qDir == PlayerDir::UP )
+    {
+        if ( _currPos.x < _centerPos.x && _currPos.y == _centerPos.y )
+        {
+            outDir = PlayerDir::RIGHT;
+            printf("Q UP :: RIGHT\n");
+        }
+        else if ( _currPos.y > 0 && _currPos.x == _centerPos.x )
+        {
+            outDir = PlayerDir::UP;
+            printf("Q UP :: UP\n");
+        }
+        else if ( _currPos.x > 0 && _currPos.y == 0 )
+        {
+            outDir = PlayerDir::LEFT;
+            printf("Q UP :: LEFT\n");
+        }
+        else if ( _currPos.y < _centerPos.y && _currPos.x == 0 )
+        {
+            outDir = PlayerDir::DOWN;
+            printf("Q UP :: DOWN\n");
+        }
+    }
+    else if ( qDir == PlayerDir::LEFT )
+    {
+        if ( _currPos.x < _centerPos.x && _currPos.y == (_boardHeight -1) )
+        {
+            outDir = PlayerDir::RIGHT;
+            printf("Q LEFT :: RIGHT\n");
+        }
+        else if ( _currPos.y > _centerPos.y && _currPos.x == _centerPos.x )
+        {
+            outDir = PlayerDir::UP;
+            printf("Q LEFT :: UP\n");
+        }
+        else if ( _currPos.x > 0 && _currPos.y == _centerPos.y )
+        {
+            outDir = PlayerDir::LEFT;
+            printf("Q LEFT :: LEFT\n");
+        }
+        else if ( _currPos.y < (_boardHeight - 1) && _currPos.x == 0 )
+        {
+            outDir = PlayerDir::DOWN;
+            printf("Q LEFT :: DOWN\n");
+        }
+    }
+    else if ( qDir == PlayerDir::DOWN )
+    {
+        if ( _currPos.x < (_boardWidth - 1) && _currPos.y == (_boardHeight - 1) )
+        {
+            outDir = PlayerDir::RIGHT;
+            printf("Q DOWN :: RIGHT\n");
+        }
+        else if ( _currPos.y > _centerPos.y && _currPos.x == (_boardWidth - 1) )
+        {
+            outDir = PlayerDir::UP;
+            printf("Q DOWN :: UP\n");
+        }
+        else if ( _currPos.x > _centerPos.x && _currPos.y == _centerPos.y )
+        {
+            outDir = PlayerDir::LEFT;
+            printf("Q DOWN :: LEFT\n");
+        }
+        else if ( _currPos.y < (_boardHeight - 1) && _currPos.x == _centerPos.x )
+        {
+            outDir = PlayerDir::DOWN;
+            printf("Q DOWN :: DOWN\n");
+        }
+    }
 
+    return outDir;
+}
+void Not_Killer::centerReset()
+{
+    _centerPos   = _currPos;
+    if ( ( (_centerPos.x < _boardWidth -1) && _centerPos.x > 0 ) &&
+        ( (_centerPos.y < _boardHeight -1) && _centerPos.y > 0 ) )
+    {
+        _posSeq = {
+            PlayerDir::RIGHT,
+            PlayerDir::UP,
+            PlayerDir::LEFT,
+            PlayerDir::DOWN };
+    }
+    else if ( 0 == _centerPos.x  && 0 == _centerPos.y )
+    {
+        _posSeq = {
+            PlayerDir::DOWN };
+    }
+    else if ( (_boardWidth -1) == _centerPos.x  && 0 == _centerPos.y )
+    {
+        _posSeq = {
+            PlayerDir::LEFT };
+    }
+    else if ( 0 == _centerPos.x  && ( _boardHeight - 1) == _centerPos.y )
+    {
+        _posSeq = {
+            PlayerDir::RIGHT };
+    }
+    else if ( (_boardWidth -1) == _centerPos.x  && (_boardHeight -1) == _centerPos.y )
+    {
+        _posSeq = {
+            PlayerDir::UP };
+    }
+    else if ( ( (_centerPos.x < _boardWidth -1) && _centerPos.x > 0 ) &&
+         _centerPos.y == 0 )
+    {
+        _posSeq = {
+            PlayerDir::LEFT,
+            PlayerDir::DOWN };
+    }
+    else if ( ( (_centerPos.x < _boardWidth -1) && _centerPos.x > 0 ) &&
+         _centerPos.y == (_boardHeight -1)  )
+    {
+        _posSeq = {
+            PlayerDir::UP,
+            PlayerDir::RIGHT };
+    }
+    else if ( ( (_centerPos.y < _boardHeight -1) && _centerPos.y > 0 ) &&
+         _centerPos.x == 0 )
+    {
+        _posSeq = {
+            PlayerDir::DOWN,
+            PlayerDir::RIGHT };
+    }
+    else if ( ( (_centerPos.y < _boardHeight -1) && _centerPos.y > 0 ) &&
+         _centerPos.x == (_boardWidth -1) )
+    {
+        _posSeq = {
+            PlayerDir::UP,
+            PlayerDir::LEFT };
+    }
 
+    _currSeqDir = 0;
+    _posSeqSize = static_cast<int32_t>(_posSeq.size());
+}
